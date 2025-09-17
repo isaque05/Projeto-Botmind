@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BotMind — Chat</title>
+  <style>
+    /* ======= Estética moderna + acessível ======= */
+    :root{
+      --bg:#0b1020; --card:#0f1a2b; --glass:rgba(255,255,255,0.04);
+      --accent:#7c3aed; --accent-2:#06b6d4; --muted:#9aa7bd; --text:#e6eef6;
+      --radius:14px;
+      --maxw:980px;
+    }
+    *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#050712 0%, #071226 100%);color:var(--text)}
+    .wrap{max-width:var(--maxw);margin:32px auto;padding:20px;display:grid;grid-template-columns:1fr 360px;gap:18px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:var(--radius);box-shadow:0 8px 30px rgba(2,6,23,0.6);overflow:hidden}
+
+    /* CHAT PRINCIPAL */
+    .chat-area{display:flex;flex-direction:column;height:78vh;min-height:520px}
+    .chat-header{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,0.03)}
+    .logo{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent),var(--accent-2));font-weight:700;color:#fff;font-size:18px}
+    .title{font-size:16px;font-weight:700}
+    .subtitle{font-size:12px;color:var(--muted)}
+
+    .messages{padding:18px;flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px}
+    .bubble{max-width:78%;padding:12px 14px;border-radius:12px;line-height:1.35;box-shadow:0 1px 0 rgba(255,255,255,0.02)}
+    .from-me{margin-left:auto;background:linear-gradient(180deg,#b794f4,#7c3aed);color:#031025;border-bottom-right-radius:6px}
+    .from-bot{background:rgba(255,255,255,0.02);color:var(--muted);border-bottom-left-radius:6px;display:flex;gap:10px}
+    .avatar{width:36px;height:36px;border-radius:10px;flex:0 0 36px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-weight:700}
+
+    .input-area{display:flex;gap:8px;padding:14px;border-top:1px solid rgba(255,255,255,0.02);align-items:center}
+    .input-area textarea{flex:1;min-height:48px;max-height:160px;padding:12px;border-radius:10px;border:none;background:rgba(255,255,255,0.02);color:inherit;resize:none}
+    .btn{background:var(--accent);border:none;padding:10px 14px;border-radius:10px;color:#fff;font-weight:700;cursor:pointer}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+
+    /* ASIDE / CONFIG */
+    .side{padding:18px;display:flex;flex-direction:column;gap:12px}
+    .group{background:var(--card);padding:12px;border-radius:12px}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px}
+    input[type=text],select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit}
+    .small{font-size:12px;color:var(--muted)}
+
+    /* Typing indicator */
+    .typing{display:inline-flex;gap:6px;align-items:center}
+    .dot{width:8px;height:8px;border-radius:999px;background:rgba(255,255,255,0.12);animation:blink 1s infinite}
+    .dot:nth-child(2){animation-delay:0.15s}
+    .dot:nth-child(3){animation-delay:0.3s}
+    @keyframes blink{0%{opacity:0.2}50%{opacity:1}100%{opacity:0.2}}
+
+    /* Responsivo */
+    @media (max-width:980px){.wrap{grid-template-columns:1fr; padding:14px} .side{order:2} .chat-area{order:1}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <section class="card chat-area" aria-label="Chat BotMind">
+      <div class="chat-header">
+        <div class="logo">BM</div>
+        <div>
+          <div class="title">BotMind</div>
+          <div class="subtitle" id="statusText">pronto — ajuste API nas configurações</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <button class="btn ghost" id="openSettings">Configurar</button>
+          <button class="btn ghost" id="clearChat">Limpar</button>
+        </div>
+      </div>
+
+      <div class="messages" id="messages" role="log" aria-live="polite"></div>
+
+      <div class="input-area">
+        <textarea id="input" placeholder="Escreva para o BotMind... (Shift+Enter para nova linha)"></textarea>
+        <button class="btn" id="send">Enviar</button>
+      </div>
+    </section>
+
+    <aside class="card side">
+      <div class="group">
+        <strong>Configuração rápida</strong>
+        <p class="small">Coloque o endpoint da sua API Gemini (ou do seu proxy) e a chave se necessário. Em produção, recomendamos usar um backend proxy para não expor a chave no front-end.</p>
+      </div>
+
+      <div class="group">
+        <label>API URL</label>
+        <input id="apiUrl" type="text" placeholder="https://seu-backend.example/api/gemini" />
+        <div class="small">Deixe vazio para modo demo (resposta mock).</div>
+      </div>
+
+      <div class="group">
+        <label>API Key (opcional)</label>
+        <input id="apiKey" type="text" placeholder="Bearer token (opcional)" />
+        <div class="small">Se seu proxy exigir Authorization, informe aqui. NÃO salve chaves públicas em produção.</div>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="save">Salvar</button>
+        <button class="btn ghost" id="restore">Restaurar</button>
+      </div>
+
+      <div class="group">
+        <strong>Personalização</strong>
+        <label>Nome do Bot</label>
+        <input id="botName" type="text" value="BotMind" />
+        <label>Estilo de payload</label>
+        <select id="payloadFormat"><option value="gemini">Gemini</option><option value="generic">Genérico</option></select>
+      </div>
+
+      <div class="group small">
+        <strong>Dica:</strong> para usar a API Gemini com segurança, crie um endpoint no seu servidor que receba a requisição do navegador e encaminhe para a Gemini com a chave guardada no servidor.
+      </div>
+    </aside>
+
+  </div>
+
+  <script>
+    // ===== LÓGICA =====
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    const clearBtn = document.getElementById('clearChat');
+    const apiUrlEl = document.getElementById('apiUrl');
+    const apiKeyEl = document.getElementById('apiKey');
+    const saveBtn = document.getElementById('save');
+    const restoreBtn = document.getElementById('restore');
+    const payloadFmt = document.getElementById('payloadFormat');
+    const botNameEl = document.getElementById('botName');
+    const statusText = document.getElementById('statusText');
+    const openSettings = document.getElementById('openSettings');
+
+    // Carrega / salva configurações
+    function load(){
+      const s = JSON.parse(localStorage.getItem('botmind_settings')||'{}');
+      apiUrlEl.value = s.apiUrl||'';
+      apiKeyEl.value = s.apiKey||'';
+      payloadFmt.value = s.payloadFormat||'gemini';
+      botNameEl.value = s.botName||'BotMind';
+      updateStatus();
+    }
+    function save(){
+      const s = {apiUrl: apiUrlEl.value.trim(), apiKey: apiKeyEl.value.trim(), payloadFormat: payloadFmt.value, botName: botNameEl.value.trim()};
+      localStorage.setItem('botmind_settings', JSON.stringify(s));
+      updateStatus();
+      toast('Configurações salvas');
+    }
+    function restore(){ localStorage.removeItem('botmind_settings'); load(); toast('Restaurado'); }
+
+    function updateStatus(){
+      statusText.textContent = apiUrlEl.value.trim() ? ('Endpoint: ' + apiUrlEl.value.trim()) : 'Modo demo — sem endpoint';
+      document.querySelector('.title').textContent = botNameEl.value || 'BotMind';
+    }
+
+    // Toast simples
+    function toast(msg){ const el = document.createElement('div'); el.textContent = msg; el.style.position='fixed'; el.style.right='20px'; el.style.bottom='20px'; el.style.padding='10px 12px'; el.style.background='rgba(0,0,0,0.6)'; el.style.borderRadius='8px'; document.body.appendChild(el); setTimeout(()=>el.remove(),1600);} 
+
+    // Render helpers
+    function appendMessage(text, who='bot', opts={typing:false}){
+      const wrap = document.createElement('div');
+      if(who==='me'){
+        const b = document.createElement('div'); b.className='bubble from-me'; b.textContent = text; wrap.appendChild(b);
+      } else {
+        const outer = document.createElement('div'); outer.style.display='flex'; outer.style.gap='10px';
+        const av = document.createElement('div'); av.className='avatar'; av.textContent = (botNameEl.value||'BotMind').split(' ').map(s=>s[0]||'').slice(0,2).join('').toUpperCase();
+        const b = document.createElement('div'); b.className='bubble from-bot';
+        if(opts.typing){
+          const t = document.createElement('div'); t.className='typing'; t.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>'; b.appendChild(t);
+        } else {
+          b.textContent = text;
+        }
+        outer.appendChild(av); outer.appendChild(b); wrap.appendChild(outer);
+      }
+      messagesEl.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return wrap;
+    }
+
+    // Remove typing bubble
+    function removeTyping(){ const nodes = Array.from(messagesEl.querySelectorAll('.typing')); nodes.forEach(t=>t.closest('.bubble').remove()); }
+
+    // Mock demo response
+    function mockResponse(input){ return 'Olá — sou o ' + (botNameEl.value||'BotMind') + '. Resposta demo para: "' + input + '"'; }
+
+    // Chamada de API principal
+    async function callAPI(message){
+      const apiUrl = apiUrlEl.value.trim();
+      const apiKey = apiKeyEl.value.trim();
+      const fmt = payloadFmt.value;
+      if(!apiUrl){ await new Promise(r=>setTimeout(r,600)); return mockResponse(message); }
+
+      const headers = {'Content-Type':'application/json'};
+      if(apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+
+      let body;
+      if(fmt === 'gemini'){
+        body = {prompt: message};
+      } else { body = {input: message}; }
+
+      const res = await fetch(apiUrl,{method:'POST',headers,body:JSON.stringify(body)});
+      if(!res.ok){ const txt = await res.text(); throw new Error('Status '+res.status+': '+txt.slice(0,200)); }
+
+      const ct = res.headers.get('content-type') || '';
+      if(ct.includes('application/json')){
+        const j = await res.json();
+        if(j.candidates && j.candidates[0] && j.candidates[0].content) return j.candidates[0].content;
+        if(j.output && typeof j.output === 'string') return j.output;
+        if(j.choices && j.choices[0]){
+          if(j.choices[0].text) return j.choices[0].text;
+          if(j.choices[0].message && j.choices[0].message.content) return j.choices[0].message.content;
+        }
+        return JSON.stringify(j);
+      }
+      return await res.text();
+    }
+
+    // Envio
+    async function sendMessage(){
+      const text = inputEl.value.trim(); if(!text) return;
+      appendMessage(text,'me'); inputEl.value='';
+      const typingWrap = appendMessage('', 'bot', {typing:true});
+      try{
+        const reply = await callAPI(text);
+        removeTyping(); appendMessage(reply,'bot');
+      }catch(err){ removeTyping(); appendMessage('Erro: '+(err.message||err),'bot'); console.error(err); }
+    }
+
+    // Eventos
+    sendBtn.addEventListener('click', sendMessage);
+    inputEl.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); } });
+    clearBtn.addEventListener('click', ()=>{ messagesEl.innerHTML=''; toast('Chat limpo'); });
+    saveBtn.addEventListener('click', save);
+    restoreBtn.addEventListener('click', restore);
+    openSettings.addEventListener('click', ()=>{ window.scrollTo({top:0,behavior:'smooth'}); apiUrlEl.focus(); });
+
+    // Inicia
+    load();
+
+    // Atenção de segurança
+    // NÃO exponha API Keys no front-end em produção. Use este HTML para testes e protótipos.
+  </script>
+</body>
+</html>
