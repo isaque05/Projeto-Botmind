@@ -71,6 +71,7 @@ class ChatBot:
             
             # Gerar resposta
             if use_gemini and self.gemini_integration:
+                print("[GEMINI] Chamando Gemini para gerar resposta...")
                 response_text = self._get_gemini_response(message)
             else:
                 response_text = self._get_default_response(message)
@@ -141,6 +142,7 @@ class ChatBot:
         Gera resposta usando integração com Gemini
         """
         if not self.gemini_integration or not self.gemini_integration.is_available():
+            print(f"[GEMINI] Fallback para resposta padrão: {e}")
             return self._get_default_response(message)
         
         try:
@@ -160,19 +162,16 @@ class ChatBot:
             print(f"Erro ao usar Gemini: {e}")
             return self._get_default_response(message)
     
-    def _get_conversation_context_for_gemini(self) -> str:
+    def _get_conversation_context_for_gemini(self, user_id: str = 'current_user') -> str:
         """Obtém contexto da conversa para o Gemini"""
         try:
-            recent_messages = self.db_manager.get_recent_messages('current_user', 5)
+            # Pegar apenas a última mensagem do usuário para reduzir latência
+            recent_messages = self.db_manager.get_recent_messages(user_id, 1)
             if not recent_messages:
                 return ""
-            
-            context_parts = []
-            for msg in recent_messages[-3:]:  # Últimas 3 mensagens
-                role = "Usuário" if msg['is_user'] else "Assistente"
-                context_parts.append(f"{role}: {msg['message']}")
-            
-            return "\n".join(context_parts)
+            last = recent_messages[-1]
+            role = "Usuário" if last['is_user'] else "Assistente"
+            return f"{role}: {last['message']}"
         except:
             return ""
     

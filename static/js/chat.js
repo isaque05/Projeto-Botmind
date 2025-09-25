@@ -95,32 +95,80 @@ class ChatBot {
         const message = this.messageInput.value.trim();
         if (!message || this.isLoading) return;
         
-        // Adicionar mensagem do usuário
         this.addMessage(message, 'user');
-        
-        // Limpar input
         this.messageInput.value = '';
         this.updateCharCount();
         this.autoResizeTextarea();
         
-        // Mostrar loading
-        this.showLoading();
-        
         try {
-            // Enviar para o backend
-            const response = await this.sendToBackend(message);
-            
-            // Adicionar resposta do bot
-            this.addMessage(response.response, 'bot');
-            
-            // Salvar configurações do usuário se necessário
-            await this.saveUserSettings();
-            
+            if (this.useGeminiCheckbox.checked) {
+                // No streaming não exibimos overlay para ver o texto se formando
+                this.sendBtn.disabled = true;
+                await this.sendStreaming(message);
+                this.sendBtn.disabled = false;
+            } else {
+                this.showLoading();
+                const response = await this.sendToBackend(message);
+                this.addMessage(response.response, 'bot');
+                await this.saveUserSettings();
+                this.hideLoading();
+            }
         } catch (error) {
             console.error('Erro ao enviar mensagem:', error);
             this.addMessage('Desculpe, ocorreu um erro. Tente novamente.', 'bot');
-        } finally {
-            this.hideLoading();
+            // Garantir que o overlay não fique travado em erros no modo não-streaming
+            try { this.hideLoading(); } catch (_) {}
+        }
+    }
+
+    async sendStreaming(message) {
+        // Cria uma mensagem vazia do bot e vai preenchendo em tempo real
+        const placeholderDiv = document.createElement('div');
+        placeholderDiv.className = 'message bot';
+        const timestamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        placeholderDiv.innerHTML = `
+            <div class="message-avatar">🤖</div>
+            <div class="message-content"><span class="stream-text"></span>
+                <div class="message-time">${timestamp}</div>
+            </div>`;
+        this.chatMessages.appendChild(placeholderDiv);
+        const streamSpan = placeholderDiv.querySelector('.stream-text');
+        if (this.autoScroll) this.scrollToBottom();
+
+        const payload = {
+            message: message,
+            user_id: this.userId,
+            use_gemini: true
+        };
+
+        const resp = await fetch('/api/chat/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!resp.ok) throw new Error('Falha ao iniciar streaming');
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop();
+            for (const part of parts) {
+                if (!part.startsWith('data:') && !part.startsWith('event:')) continue;
+                if (part.startsWith('event: end')) {
+                    // fim do stream
+                    continue;
+                }
+                if (part.startsWith('data:')) {
+                    const text = part.slice(5).trimStart();
+                    streamSpan.textContent += text;
+                    if (this.autoScroll) this.scrollToBottom();
+                }
+            }
         }
     }
     

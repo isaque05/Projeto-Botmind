@@ -23,7 +23,9 @@ class GeminiIntegration:
         """Inicializa a conexão com a API do Gemini"""
         try:
             genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            # Permitir configuração do modelo via env (ex.: gemini-1.5-flash-8b)
+            model_name = os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')
+            self.model = genai.GenerativeModel(model_name)
             print("✅ Gemini API inicializada com sucesso!")
         except Exception as e:
             print(f"❌ Erro ao inicializar Gemini API: {e}")
@@ -48,18 +50,35 @@ class GeminiIntegration:
             }
         
         try:
+            # Instrução de idioma: garantir respostas em pt-BR
+            language_instruction = (
+                "Você é um assistente que SEMPRE responde em português do Brasil (pt-BR). "
+                "Use vocabulário e convenções brasileiras. Se houver código, comentários também em pt-BR."
+            )
+
             # Preparar prompt com contexto se disponível
-            prompt = message
             if context:
-                prompt = f"Contexto da conversa: {context}\n\nMensagem do usuário: {message}"
+                prompt = (
+                    f"{language_instruction}\n\n"
+                    f"Contexto da conversa (resuma se necessário):\n{context}\n\n"
+                    f"Mensagem do usuário: {message}"
+                )
+            else:
+                prompt = f"{language_instruction}\n\nMensagem do usuário: {message}"
             
             # Gerar resposta
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(
+                prompt,
+                generation_config={
+                    'max_output_tokens': 256,
+                    'temperature': 0.7
+                }
+            )
             
             return {
                 'response': response.text,
                 'timestamp': datetime.now().isoformat(),
-                'model': 'gemini-pro',
+                'model': getattr(self.model, 'model_name', os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')),
                 'success': True
             }
             
@@ -82,12 +101,15 @@ class GeminiIntegration:
             return False
         
         try:
-            if system_prompt:
-                self.chat_session = self.model.start_chat(history=[])
-                # Enviar prompt do sistema como primeira mensagem
-                self.chat_session.send_message(system_prompt)
-            else:
-                self.chat_session = self.model.start_chat(history=[])
+            # Prompt padrão para forçar pt-BR
+            default_system = (
+                "Você é um assistente que SEMPRE responde em português do Brasil (pt-BR). "
+                "Use tom claro e natural brasileiro."
+            )
+            use_prompt = system_prompt or default_system
+            self.chat_session = self.model.start_chat(history=[])
+            # Enviar prompt do sistema como primeira mensagem
+            self.chat_session.send_message(use_prompt)
             
             return True
         except Exception as e:
@@ -152,10 +174,48 @@ class GeminiIntegration:
         
         return {
             'available': True,
-            'model_name': 'gemini-pro',
+            'model_name': os.getenv('GEMINI_MODEL', 'gemini-1.5-flash'),
             'api_key_set': bool(self.api_key),
             'chat_session_active': self.chat_session is not None
         }
+
+    def generate_stream(self, message: str, context: Optional[str] = None):
+        """
+        Gera resposta em streaming (yield de trechos de texto) usando a API do Gemini
+        """
+        if not self.model:
+            yield ''
+            return
+        # Instrução fixa para pt-BR
+        language_instruction = (
+            "Você é um assistente que SEMPRE responde em português do Brasil (pt-BR). "
+            "Use vocabulário e convenções brasileiras."
+        )
+        if context:
+            prompt = (
+                f"{language_instruction}\n\n"
+                f"Contexto da conversa (resuma se necessário):\n{context}\n\n"
+                f"Mensagem do usuário: {message}"
+            )
+        else:
+            prompt = f"{language_instruction}\n\nMensagem do usuário: {message}"
+        try:
+            response = self.model.generate_content(
+                prompt,
+                generation_config={
+                    'max_output_tokens': 256,
+                    'temperature': 0.7
+                },
+                stream=True
+            )
+            for chunk in response:
+                try:
+                    if hasattr(chunk, 'text') and chunk.text:
+                        yield chunk.text
+                except Exception:
+                    continue
+        except Exception as e:
+            yield f""
 
 # Função para configurar Gemini no chatbot principal
 def setup_gemini_in_chatbot(chatbot_instance, api_key: Optional[str] = None):
